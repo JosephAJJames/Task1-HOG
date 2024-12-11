@@ -1,141 +1,142 @@
 function extractedHOGFeatures = extractHOGFeatures(inputImage)
-
+    %defining the extractedHOGFeatures to concatante to later
     extractedHOGFeatures = [];
 
+%defining helper functions
 
-    %function to calculate the gradient magnitude and angle of a 8x8 cell
-    function [magnitued, angle] = apply_sobel_filter(cell)
+function [magnitued, angle] = apply_sobel_filter(cell)
 
-        %defining the sobel filters
-        sobel_vert = [-1 -2 -1; 0 0 0; 1 2 1]; %filter to be used along y axis
-        sobel_horz = [-1 0 1; -2 0 2; -1 0 1]; %filter to be used along x axis
+    %defining the sobel filters
+    sobel_vert = [-1 -2 -1; 0 0 0; 1 2 1]; %filter to be used along y axis
+    sobel_horz = [-1 0 1; -2 0 2; -1 0 1]; %filter to be used along x axis
 
-        %applying filters to cell
-        gx = imfilter(cell, sobel_horz, "symmetric");
-        gy = imfilter(cell, sobel_vert, "symmetric");
+    %applying filters to cell
+    gx = imfilter(cell, sobel_horz, "symmetric"); %apply the horiontal filter to the image
+    gy = imfilter(cell, sobel_vert, "symmetric"); %apply the horizontal filter to the image
 
-        %calculating the magnitudes and angles
-        magnitued = sqrt(gx.^2 + gy.^2);
-        angle = rad2deg(atan2(gy, gx));
+    %calculating the magnitudes and angles
+    magnitued = sqrt(gx.^2 + gy.^2);
+    angle = rad2deg(atan2(gy, gx));
+    %convert negative angles to positive
+    angle = mod(angle + 180, 180); %will turn any negative angles into their positive equivalaent
 
-        %normalise magnitudes
-        magnitued = magnitued / max(magnitued(:));
-
-        %convert negative angles to positive
-        angle = mod(angle + 180, 180); 
+    %normalise magnitudes
+    magnitued = magnitued / max(magnitued(:)); %normalise the magnitueds
     end
 
 
-    function blocks = extract_blocks(inputImage, block_size)
+    function blocks = extract_blocks(inputImage)
+        %defining block size
+        block_size = 16; %block size is 16 as blocks are 2x2 cells
 
-        stride_horizontal = 1;
-        stride_vertical = 1;
-        [rows, cols] = size(inputImage);
+        %extracting dimensions of the image
+        [rows, cols] = size(inputImage); %extracting height and width of the inputImage
 
-        % Compute the number of blocks based on horizontal stride
-        numBlocksX = floor((cols - block_size) / stride_horizontal) + 1;
-        numBlocksY = floor((rows - block_size) / stride_vertical) + 1;
+        %computing the number of blocks in the imag
+        num_x = floor((cols - block_size) / 8) + 1; %calculating the horizionatal blocks
+        num_y = floor((rows - block_size) / 8) + 1; %calculating the vertical blocks
     
-        % Preallocate the blocks matrix
-        blocks = zeros(block_size^2, numBlocksX * numBlocksY);
+        %preallocate block matrix
+        blocks = zeros(block_size^2, num_x * num_y); %number of rows is ^2 of block size as they are going to be flatternd, number of columns is number of blocks in the image
     
-        % Index for blocks
-        blockIdx = 1;
+        %used to track which block we're considering, starting from first
+        block_num = 1;
     
-        for i = 1:stride_vertical:(rows - block_size + 1)
-            for j = 1:stride_horizontal:(cols - block_size + 1)
-                % Extract the block
+        %loops to extract each block and place it in the, stride of 8 as size of 1 cell is 8
+        for i = 1:8:(rows - block_size + 1)
+            for j = 1:8:(cols - block_size + 1)
+                % extract the block
                 block = inputImage(i:i+block_size-1, j:j+block_size-1);
                 
-                % Flatten the block and store it
-                blocks(:, blockIdx) = block(:);
+                % store the block in its own column
+                blocks(:, block_num) = block(:);
                 
-                % Increment block index
-                blockIdx = blockIdx + 1;
+                %increase block index as we're moving onto the next one
+                block_num = block_num + 1;
             end
         end
 
     end
 
-
+    %helper function to split a block down into its cells
     function [cell_1, cell_2, cell_3, cell_4] = split_block_into_cells(block)
-        [blockHeight, blockWidth] = size(block);
+        %
+        [block_height, block_width] = size(block);
 
-        % Compute the size of each cell
-        cellHeight = blockHeight / 2;
-        cellWidth = blockWidth / 2;
+        %calculate the size of each cell
+        cell_height = block_height / 2; % halfing the height of a block to get the cell height
+        cell_width = block_width / 2; % halfing the width of the block to get the cell width
 
         % split the block into four cells
-        cell_1 = block(1:cellHeight, 1:cellWidth);             % Top-left
-        cell_2 = block(1:cellHeight, cellWidth+1:end);         % Top-right
-        cell_3 = block(cellHeight+1:end, 1:cellWidth);         % Bottom-left
-        cell_4 = block(cellHeight+1:end, cellWidth+1:end);     % Bottom-right
+        cell_1 = block(1:cell_height, 1:cell_width); % top left
+        cell_2 = block(1:cell_height, cell_width+1:end); % top right
+        cell_3 = block(cell_height+1:end, 1:cell_width); % bottom left
+        cell_4 = block(cell_height+1:end, cell_width+1:end); % bottom right
     end
 
-    function histogram = computre_cell_gradient_histogram(magnitude, angle)
-        binEdges = linspace(0, 180, 10); 
-        histogram = zeros(1, 9); 
+    %helper function to create the histogram for a partiular cell
+    function histogram = computre_cell_gradient_histogram(cell)
+        [magnitude, angle] = apply_sobel_filter(cell); % calculate the magnitude and orientation of the current cell
+
+        binEdges = linspace(0, 180, 10); %define our bins
+        histogram = zeros(1, 9);  %pre-allocate the histogram
     
-        
-        magnitude = magnitude(:);
-        angle = angle(:);
+        %prepare the magnitudes and orientations for binning
+        magnitude = magnitude(:); %falltern the magnitude
+        angle = angle(:); %falltern the magnitude
 
-        
-        for b = 1:9
-            inBin = (angle >= binEdges(b)) & (angle < binEdges(b + 1));
+        %put the data in its corrosponding bin
+        for b = 1:9 %loop over each bin
+            inBin = (angle >= binEdges(b)) & (angle < binEdges(b + 1)); %create a logical array of angles that fit into the current bin
 
-            histogram(b) = sum(magnitude(inBin));
+            histogram(b) = sum(magnitude(inBin)); %get the sum of the magnitudes that would fit into this angle bin
         end
     end
 
-
     %function call to extract the blocks (with horizontal stride of 1)
-    blocks = extract_blocks(inputImage, 16); %retuns a matrix of flatternd blocks
+    blocks = extract_blocks(inputImage); %retuns a matrix of flatternd blocks
 
-    size(blocks)
+    %loops over each block
+    for i = 1:size(blocks, 2) %from the first block to the last block
 
-    for i = 1:size(blocks, 2)
-
-        [cell_1 , cell_2, cell_3, cell_4] = split_block_into_cells(reshape(blocks(:, i), [16, 16]));
- 
-        %computre magnitueds and angles for cells
-        [magnitude_1, angle_1] = apply_sobel_filter(cell_1); %magnitudes and angles for top left cell of current block
-        [magnitude_2, angle_2] = apply_sobel_filter(cell_2); %magnitudes and angles for top right cell of current block
-        [magnitude_3, angle_3] = apply_sobel_filter(cell_3); %magnitudes and angles for bottom left cell of current block
-        [magnitude_4, angle_4] = apply_sobel_filter(cell_4); %magnitudes and angles for bottom right cell of current block
+        %function call to split the current block down into cells
+        [cell_1 , cell_2, cell_3, cell_4] = split_block_into_cells(reshape(blocks(:, i), [16, 16])); %reshape the column back into a 16x16 block
 
         %compute histogram for each cell
-        [histogram_1] = computre_cell_gradient_histogram(magnitude_1, angle_1); %compute histogram for first cell
-        [histogram_2] = computre_cell_gradient_histogram(magnitude_2, angle_2); %computre histogram for second cell
-        [histogram_3] = computre_cell_gradient_histogram(magnitude_3, angle_3); %computte histogram for second cell
-        [histogram_4] = computre_cell_gradient_histogram(magnitude_4, angle_4); %compute histogram for third cell
+        [histogram_1] = computre_cell_gradient_histogram(cell_1); %compute histogram for first cell
+        [histogram_2] = computre_cell_gradient_histogram(cell_2); %computre histogram for second cell
+        [histogram_3] = computre_cell_gradient_histogram(cell_3); %computte histogram for second cell
+        [histogram_4] = computre_cell_gradient_histogram(cell_4); %compute histogram for third cell
 
-        
         block_histogram = [histogram_1, histogram_2, histogram_3, histogram_4]; %concatante the 4 histograms together
+        l2_value = sqrt(sum(block_histogram.^2)); %calcualte the l2 value of the histogram
 
-        extractedHOGFeatures = [extractedHOGFeatures, block_histogram];
+        block_histogram = block_histogram / l2_value; %normalise the histogram
+
+        extractedHOGFeatures = [extractedHOGFeatures, block_histogram]; %concatonate the new feature vector with the rest of them
 
     end
 end
 
+%loading and converting the image
+inputImage = imread("cameraman.tif"); %reading in my image
+inputImage = im2double(inputImage); %converting it to double
 
-inputImage = imread("cameraman.tif");
-inputImage = im2double(inputImage);
 
-% Load the input image
 
-% Ensure the image is grayscale
-[rows, cols, colours] = size(inputImage);
+%gray scale check
+[rows, cols, colours] = size(inputImage); %get dimensions of image matrix
 if colours > 1 %if the image has more than 1 3rd dimenison(colour channel)
-    inputImage = rgb2gray(inputImage);
+    inputImage = rgb2gray(inputImage); %convert inputImage to grayscale
 end
 
-% Ensure image dimensions are divisible by 8, otherwise Resize the image
+%calculating new image dimensions, which are a factor of 8.
 new_rows = ceil(rows/8) * 8;
 new_cols = ceil(cols/8) * 8;
 
+%checks to see if the images dimensions are different from out new, divisible by 8, dimenions
 if new_rows ~= rows || new_cols ~= cols
-    inputImage = imresize(inputImage, [new_cols, new_rows]);
+    inputImage = imresize(inputImage, [new_cols, new_rows]); %resize image with the new factor of 8 dimensions
 end
 
 
@@ -143,6 +144,5 @@ end
 
 % Call the HOG feature extraction function
 extractedHOGFeatures = extractHOGFeatures(inputImage);
-disp("bosh")
 % Display the length of the extracted features
 disp(['Length of extracted HOG features: ',num2str(length(extractedHOGFeatures))]);
